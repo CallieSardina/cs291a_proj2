@@ -42,13 +42,16 @@ end
 def handle_get_request(event)
   auth_header = event['headers']['Authorization']
   # Check authorization header matches Bearer
+  #if auth_header && auth_header.split(" ")[0] == "Bearer"
   if auth_header && auth_header.match(/^Bearer (.*)/)
     # Question -- what is the point of having token = $1?
-    token = $1
+    #token = $1
+    token = event['headers']['Authorization'].split(" ")[1]
     begin
-      decoded_token = JWT.decode token, ENV['JWT_SECRET'], true, { algorithm: 'HS256' }
+      #payload = JWT.decode(token, ENV['JWT_SECRET'], 'HS256')
+      payload = JWT.decode token, ENV['JWT_SECRET'], true, { algorithm: 'HS256' }
       # Appropriate calls will return 200 OK.
-      response(body: { data: decoded_token[0]['data'] }, status: 200)
+      response(body: { data: payload[0]['data'] }, status: 200)
     rescue JWT::ExpiredSignature
       # An expired token will throw 401 Unauthorized. 
       response(body: { error: 'Unauthorized' }, status: 401)
@@ -92,13 +95,13 @@ def handle_post_token_request(event)
 
   # Define payload.
   payload = {
-    data: JSON.parse(event["body"]),
+    data: data,
     exp: Time.now.to_i + 5,
     nbf: Time.now.to_i + 2
   }
   token = JWT.encode(payload, ENV['JWT_SECRET'], 'HS256')
   # On success, returns a json document of the format {"token": <GENERATED_JWT>} with status code 201.
-  response(body: { "token"=>token }, status: 201)
+  return response(body: { "token" => token }, status: 201)
 end
 
 if $PROGRAM_NAME == __FILE__
