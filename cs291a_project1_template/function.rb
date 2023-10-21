@@ -40,68 +40,65 @@ end
 
 # Method to handle GET request.
 def handle_get_request(event)
-  auth_header = event['headers']['Authorization']
-  # Check authorization header matches Bearer
-  #if auth_header && auth_header.split(" ")[0] == "Bearer"
-  if auth_header && auth_header.match(/^Bearer (.*)/)
-    # Question -- what is the point of having token = $1?
-    #token = $1
-    token = event['headers']['Authorization'].split(" ")[1]
-    begin
-      #payload = JWT.decode(token, ENV['JWT_SECRET'], 'HS256')
-      payload = JWT.decode token, ENV['JWT_SECRET'], true, { algorithm: 'HS256' }
-      # Appropriate calls will return 200 OK.
-      response(body: { data: payload[0]['data'] }, status: 200)
-    rescue JWT::ExpiredSignature
-      # An expired token will throw 401 Unauthorized. 
-      response(body: { error: 'Unauthorized' }, status: 401)
-    rescue JWT::ImmatureSignature
-      # An not-yet-valid token will throw 401 Unauthorized. 
-      response(body: { error: 'Unauthorized' }, status: 401)
-    rescue JWT::DecodeError
-      # Authorization: Bearer <TOKEN> header missing, respond 403.
-      response(body: { error: 'Forbidden' }, status: 403)
+  auth_header = event["headers"]["Authorization"]
+  begin
+    # Check authorization header matches Bearer, if not respond 403.
+    if event["headers"]["Authorization"].split(" ")[0] != "Bearer"
+      return response(body: { error: 'Forbidden' }, status: 403)
     end
-  else
+    
+    # Define token and payload.
+    token = event["headers"]["Authorization"].split(" ")[1]
+    payload = JWT.decode(token, ENV['JWT_SECRET'])
+    
+  rescue JWT::ImmatureSignature => e
+    # An not-yet-valid token will throw 401 Unauthorized. 
+    return response(body: { error: 'Unauthorized' }, status: 401)
+
+  rescue JWT::ExpiredSignature => e
+    # An expired token will throw 401 Unauthorized.
+    return response(body: { error: 'Unauthorized' }, status: 401)
+    
+  rescue JWT::DecodeError => e
+    # Authorization: Bearer <TOKEN> header missing, respond 403.
+    return response(body: { error: 'Forbidden' }, status: 403)
+    
+  rescue
     # Catch all unwanted behavior with 403 Forbidden.
-    response(body: { error: 'Forbidden' }, status: 403)
+    return response(body: { error: 'Forbidden' }, status: 403)
+    
+  else
+    # Appropriate calls will return 200 OK.
+    return response(body: payload[0]["data"], status: 200)
   end
 end
 
 # Method to handle POST request.
 def handle_post_token_request(event)
-  content_type = event['headers']['Content-Type']
+  content_type = event["headers"]["Content-Type"]
 
   # If there is aContent-Type header andit is not 'application/json', respond 415.
   if !content_type.nil? && content_type != 'application/json'
     return response(body: { error: 'Unsupported Media Type' }, status: 415)
   end
 
-  # Define event body (to avoid redundancy in code).
-  body = event["body"]
-
-  # If body is nil or empty, respond 422.
-  if body.nil? || body.strip.empty?
-    return response(body: { error: 'Unprocessable Entity' }, status: 422)
-  end
-
   begin
-    # Parse JSON from body. 
-    data = JSON.parse(event["body"])
-  rescue JSON::ParserError
-    # If JSON is invalid, respond 422.
+    # Parse JSON body object.
+    JSON.parse(event["body"])
+  rescue
+    # Non-parsable JSON body repsonds 422.
     return response(body: { error: 'Unprocessable Entity' }, status: 422)
+  else
+    # Define payload.
+    payload = {
+      data: JSON.parse(event["body"]),
+      exp: Time.now.to_i + 5,
+      nbf: Time.now.to_i + 2
+    }
+    # Define token and return successful response 201.
+    token = JWT.encode payload, ENV['JWT_SECRET'], 'HS256'
+    return response(body: {"token" => token}, status: 201)
   end
-
-  # Define payload.
-  payload = {
-    data: data,
-    exp: Time.now.to_i + 5,
-    nbf: Time.now.to_i + 2
-  }
-  token = JWT.encode(payload, ENV['JWT_SECRET'], 'HS256')
-  # On success, returns a json document of the format {"token": <GENERATED_JWT>} with status code 201.
-  return response(body: { "token" => token }, status: 201)
 end
 
 if $PROGRAM_NAME == __FILE__
